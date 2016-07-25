@@ -326,6 +326,9 @@ def rename_models(cr, model_spec):
                    'WHERE res_model = %s', (new, old,))
         cr.execute('UPDATE ir_model_fields SET model = %s '
                    'WHERE model = %s', (new, old,))
+        if openupgrade_tools.table_exists(cr, 'mail_followers'):
+            cr.execute('UPDATE mail_followers SET res_model = %s '
+                       'WHERE res_model = %s', (new, old,))
     # TODO: signal where the model occurs in references to ir_model
 
 
