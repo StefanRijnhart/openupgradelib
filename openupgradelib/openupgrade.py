@@ -1,24 +1,8 @@
-# -*- coding: utf-8 -*-
-##############################################################################
-#
-#    OpenERP, Open Source Management Solution
-#    This module copyright (C) 2011-2013 Therp BV (<http://therp.nl>)
-#
-#    This program is free software: you can redistribute it and/or modify
-#    it under the terms of the GNU Affero General Public License as
-#    published by the Free Software Foundation, either version 3 of the
-#    License, or (at your option) any later version.
-#
-#    This program is distributed in the hope that it will be useful,
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#    GNU Affero General Public License for more details.
-#
-#    You should have received a copy of the GNU Affero General Public License
-#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
-##############################################################################
+# Copyright (C) 2011-2013 Therp BV (<http://therp.nl>)
+# Copyright Odoo Community Association (OCA)
+# License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl).
 
+import json
 import sys
 import os
 import inspect
@@ -58,6 +42,7 @@ from psycopg2 import sql
 from psycopg2.extensions import AsIs
 from lxml import etree
 from . import openupgrade_tools
+from .apriori import Apriori
 
 core = None
 # The order matters here. We can import odoo in 9.0, but then we get odoo.py
@@ -269,7 +254,7 @@ def load_data(cr, module_name, filename, idref=None, mode='init'):
 
     :param module_name: the name of the module
     :param filename: the path to the filename, relative to the module \
-    directory.
+    directory. This may also be the module directory relative to --upgrade-path
     :param idref: optional hash with ?id mapping cache?
     :param mode:
         one of 'init', 'update', 'demo', 'init_no_create'.
@@ -288,7 +273,15 @@ def load_data(cr, module_name, filename, idref=None, mode='init'):
     logger.info('%s: loading %s' % (module_name, filename))
     _, ext = os.path.splitext(filename)
     pathname = os.path.join(module_name, filename)
-    fp = tools.file_open(pathname)
+
+    try:
+        fp = tools.file_open(pathname)
+    except OSError:
+        if tools.config.get('upgrade_path'):
+            pathname = os.path.join(
+                tools.config['upgrade_path'], module_name, filename)
+        fp = open(pathname)
+
     try:
         if ext == '.csv':
             noupdate = True
@@ -2558,3 +2551,22 @@ def convert_to_company_dependent(
                 )
             ), args,
         )
+
+
+def _load_apriori(path=None):
+    """ Load a 14.0+ Apriori object from apriori.json in the root of the
+    --upgrade-path """
+    if path is None:
+        from odoo import tools
+        path = tools.config['upgrade_path']
+    apriori_path = os.path.join(path, "apriori.json")
+    try:
+        with open(apriori_path) as json_file:
+            apriori_dict = json.load(json_file)
+    except FileNotFoundError:
+        raise UserError(
+            "Could not import apriori.json: file %s not found" % apriori_path
+        )
+    except ValueError:
+        raise UserError("The contents of apriori.json is not valid json")
+    return Apriori(apriori_dict)
