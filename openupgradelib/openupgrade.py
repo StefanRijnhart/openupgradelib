@@ -896,15 +896,41 @@ def rename_xmlids(cr, xmlids_spec):
 
     :param xmlids_spec: a list of tuples (old module.xmlid, new module.xmlid).
     """
+    get_data_query = (
+        """SELECT res_id, model FROM ir_model_data
+        WHERE module=%s AND name=%s""")
+
     for (old, new) in xmlids_spec:
         if '.' not in old or '.' not in new:
             logger.error(
                 'Cannot rename XMLID %s to %s: need the module '
                 'reference to be specified in the IDs' % (old, new))
-        else:
-            query = ("UPDATE ir_model_data SET module = %s, name = %s "
-                     "WHERE module = %s and name = %s")
-            logged_query(cr, query, tuple(new.split('.') + old.split('.')))
+            continue
+
+        cr.execute(get_data_query, tuple(old.split('.')))
+        old_row = cr.fetchone()
+        if not old_row:
+            logger.warning('XMLID %s not found when renaming to %s', old, new)
+            continue
+
+        if old_row[1] == 'ir.module.category':
+            # Special treatment for module categories, which are generated
+            # on the fly by the Odoo database initialization routine and may
+            # resurface over a longer period of time.
+            cr.execute(get_data_query, tuple(new.split('.')))
+            new_row = cr.fetchone()
+            if new_row:
+                # Cannot import merge_records until after Odoo initialization
+                from .openupgrade_merge_records import merge_records
+                env = api.Environment(cr, SUPERUSER_ID, {})
+                merge_records(
+                    env, "ir.module.category", [old_row[0]], new_row[0],
+                    method="sql", model_table="ir_module_category")
+                continue
+
+        query = ("UPDATE ir_model_data SET module = %s, name = %s "
+                 "WHERE module = %s and name = %s")
+        logged_query(cr, query, tuple(new.split('.') + old.split('.')))
 
 
 def add_xmlid(cr, module, xmlid, model, res_id, noupdate=False):
